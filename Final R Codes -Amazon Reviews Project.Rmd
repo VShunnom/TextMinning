@@ -1,0 +1,499 @@
+---
+title: "Exploring the Landscape"
+author: '"Victor Stephen"'
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  fig_width: 6
+  fig_height: 4
+  dpi: 96
+  html_document: null
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#Load Libraries
+```{r}
+library(tm)
+library(ggplot2)
+library(quanteda)
+library(quanteda.sentiment)
+library(dplyr)
+library(tidytext)
+library(tidyr)
+library(tidytext)
+library(RColorBrewer)
+library(topicmodels)
+library(tidyverse)
+```
+#Read Data
+```{r}
+reviews <- read.csv("C:/Users/ndona/OneDrive/Desktop/FALL 2022 COURSES/ITEC 724-BIG DATA AND TEXT MINNING/Labs/ITEC 724 project/amazon_reviews.csv", encoding = "latin1", stringsAsFactors = FALSE)
+```
+
+#Pre-processing Text
+```{r}
+
+reviews$TEXT <- gsub("[[:punct:]]", "", reviews$TEXT)
+reviews$TEXT <- gsub("[[:digit:]]", "", reviews$TEXT)
+reviews$TEXT <- gsub("\\s+", " ", reviews$TEXT)
+
+# Additional stop words
+additional_stop_words <- c("34", "2", "br", "lot", "set", "bag", "day", "tv", "watch", "makes", "camera", 
+                           "read", "found", "buy", "time", "light", "3", "5", "phone", "fit", "purchased", 
+                           "sound", "book", "bit", "days", "picture", "people", "design", "box", "water", 
+                           "item", "play", "one", "just", "can", "pong", "yearsits", "calcolatur", "tilts", 
+                           "stressanxietypanic", "differenceasinbhbgbry")
+
+# Text Preprocessing
+corpus <- Corpus(VectorSource(reviews$TEXT))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, c(stopwords("english"), additional_stop_words))
+
+
+```
+
+#RQ1:What words appear most frequently in product reviews across various categories?
+```{r}
+# Calculate TF
+dtm <- DocumentTermMatrix(corpus)
+tf <- colSums(as.matrix(dtm))
+tf <- sort(tf, decreasing = TRUE)
+top_tf <- head(tf, 10)
+
+# Calculate TF-IDF
+tfidf <- weightTfIdf(dtm)
+tfidf <- colSums(as.matrix(tfidf))
+tfidf <- sort(tfidf, decreasing = TRUE)
+top_tfidf <- head(tfidf, 10)
+
+
+# Professional color palette
+color_palette <- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", 
+                   "#e377c2", "#7f7f7f", "#bcbd22", "#17becf")
+
+# Customizing font and making it bold for the terms
+axis_text_size <- 14  # Size of the axis text
+axis_title_size <- 16  # Size of the axis title
+
+# Visualization for TF
+top_tf_df <- data.frame(Term = names(top_tf), Frequency = top_tf)
+ggplot(top_tf_df, aes(x = reorder(Term, Frequency), y = Frequency, fill = Term)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = color_palette) +
+  theme_minimal() +
+  coord_flip() +
+  xlab("Terms") +
+  ylab("Frequency") +
+  ggtitle("Top 10 Words by Term Frequency (TF)") +
+  theme(text = element_text(size = 12),
+        plot.title = element_text(size = 14, face = "bold"),
+        axis.text.y = element_text(size = axis_text_size, face = "bold"),
+        axis.text.x = element_text(size = axis_text_size),
+        axis.title = element_text(size = axis_title_size))
+
+
+# Visualization for TF-IDF
+top_tfidf_df <- data.frame(Term = names(top_tfidf), Score = top_tfidf)
+ggplot(top_tfidf_df, aes(x = reorder(Term, Score), y = Score, fill = Term)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = color_palette) +
+  theme_minimal() +
+  coord_flip() +
+  xlab("Terms") +
+  ylab("TF-IDF Score") +
+  ggtitle("Top 10 Words by TF-IDF Score") +
+  theme(text = element_text(size = 12),
+        plot.title = element_text(size = 14, face = "bold"),
+        axis.text.y = element_text(size = 14, face = "bold"),
+        axis.text.x = element_text(size = 14),
+        axis.title = element_text(size = 16))
+```
+#RQ2:Which phrases or words are uniquely important (highest TF*IDF scores) in the review text in the Amazon dataset?
+```{r}
+
+# Text to tokens
+tokens <- tokens(reviews$TEXT, what = "word")
+tokens <- tokens_remove(tokens, pattern = stopwords("english"))
+tokens <- tokens_remove(tokens, pattern = additional_stop_words)
+tokens_bigrams <- tokens_ngrams(tokens, n = 2)
+
+# Create a dfm and calculate frequency
+dfm_bigrams <- dfm(tokens_bigrams)
+bigram_freq <- topfeatures(dfm_bigrams, n = 10)
+
+# Visualization
+top_bigrams_df <- data.frame(Bigram = names(bigram_freq), Frequency = bigram_freq)
+ggplot(top_bigrams_df, aes(x = reorder(Bigram, Frequency), y = Frequency, fill = Bigram)) +
+  geom_bar(stat = "identity") +
+  scale_fill_brewer(palette = "Set3") +
+  theme_minimal() +
+  coord_flip() +
+  xlab("Bigrams") +
+  ylab("Frequency") +
+  ggtitle("Top 10 Bigrams by Frequency") +
+  theme(text = element_text(size = 12),
+        plot.title = element_text(size = 14, face = "bold"),
+        axis.text.y = element_text(size = 14, face = "bold"),
+        axis.text.x = element_text(size = 14),
+        axis.title = element_text(size = 16, face = "bold"))
+
+# Create a dfm and calculate TF-IDF
+dfm_bigrams <- dfm(tokens_bigrams)
+tfidf_bigrams <- dfm_tfidf(dfm_bigrams)
+
+# Find the top bigrams by TF-IDF
+top_tfidf <- topfeatures(tfidf_bigrams, n = 10)
+
+# Visualization
+top_tfidf_df <- data.frame(Bigram = names(top_tfidf), Score = top_tfidf)
+ggplot(top_tfidf_df, aes(x = reorder(Bigram, Score), y = Score, fill = Bigram)) +
+  geom_bar(stat = "identity") +
+  scale_fill_brewer(palette = "Set3") +
+  theme_minimal() +
+  coord_flip() +
+  xlab("Bigrams") +
+  ylab("TF-IDF Score") +
+  ggtitle("Top 10 Bigrams by TF-IDF Score") +
+  theme(text = element_text(size = 12),
+        plot.title = element_text(size = 14, face = "bold"),
+        axis.text.y = element_text(size = 14, face = "bold"),
+        axis.text.x = element_text(size = 14),
+        axis.title = element_text(size = 16, face = "bold"))
+
+```
+#Bigrams by Product Category
+```{r fig.width=12, fig.height=6}
+# Get a list of unique product categories
+unique_categories <- unique(reviews$PRODUCT_CATEGORY)
+
+# Define a function to process and plot each set of categories
+process_plot_categories <- function(category_set, set_number) {
+  bigram_results <- data.frame(Category = character(), Bigram = character(), Score = numeric(), stringsAsFactors = FALSE)
+  
+  # Process each category in the set
+  for (category in category_set) {
+    cat_reviews <- reviews[reviews$PRODUCT_CATEGORY == category, "TEXT"]
+    
+    # Text to tokens
+    tokens <- tokens(cat_reviews, what = "word")
+    tokens <- tokens_remove(tokens, pattern = stopwords("english"))
+    tokens <- tokens_remove(tokens, pattern = additional_stop_words)
+    tokens_bigrams <- tokens_ngrams(tokens, n = 2)
+    
+    # Create a dfm and calculate TF-IDF
+    dfm_bigrams <- dfm(tokens_bigrams)
+    tfidf_bigrams <- dfm_tfidf(dfm_bigrams)
+    
+    # Find the top bigrams by TF-IDF
+    top_tfidf <- topfeatures(tfidf_bigrams, n = 10)
+    
+    # Append to the results data frame
+    bigram_results <- rbind(bigram_results, data.frame(Category = as.character(category), Bigram = names(top_tfidf), Score = top_tfidf))
+  }
+  
+  # Reshape for plotting
+  bigram_results <- bigram_results %>% 
+    mutate(Bigram = factor(Bigram, levels = unique(Bigram)))
+  
+  # Visualization
+  ggplot(bigram_results, aes(x = Bigram, y = Score, fill = Category)) +
+    geom_bar(stat = "identity", show.legend = FALSE) +
+    scale_fill_brewer(palette = "Set3") +
+    facet_wrap(~Category, scales = "free") +
+    theme_minimal() +
+    coord_flip() +
+    xlab("Bigrams") +
+    ylab("TF-IDF Score") +
+    ggtitle(paste("Top 10 Bigrams by TF-IDF Score across Product Category")) +
+    theme(text = element_text(size = 12),
+          plot.title = element_text(size = 14, face = "bold"),
+          axis.text.y = element_text(size = 14, face = "bold"),
+          axis.text.x = element_text(size = 14),
+          axis.title = element_text(size = 16, face = "bold"),
+          strip.text = element_text(size = 14, face = "bold"))
+}
+
+# Process and plot the first set of 6 categories
+first_set_categories <- unique_categories[1:6]
+process_plot_categories(first_set_categories)
+first_set_categories <- unique_categories[7:12]
+process_plot_categories(first_set_categories)
+
+```
+
+#RQ3: How does the sentiment of reviews vary across different product categories?
+```{r fig.width=12, fig.height=6}
+# Tokenize the review text
+reviews_tokens <- reviews %>%
+  unnest_tokens(word, TEXT) # Replace 'TEXT' with your text column name
+
+# Using the Bing lexicon for sentiment analysis
+bing_lexicon <- get_sentiments("bing")
+
+# Join the tokenized reviews with the lexicon
+sentiment_reviews <- reviews_tokens %>%
+  inner_join(bing_lexicon, by = "word") %>%
+  mutate(score = if_else(sentiment == "positive", 1, -1)) %>%
+  group_by(PRODUCT_CATEGORY) %>%
+  summarize(average_sentiment = mean(score, na.rm = TRUE))
+
+
+# Visualize the results
+ggplot(sentiment_reviews, aes(x = reorder(PRODUCT_CATEGORY, average_sentiment), y = average_sentiment, fill = average_sentiment)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(x = "Product Category", y = "Average Sentiment", title = "Average Sentiment Score by Product Category in Amazon Reviews") +
+  scale_fill_gradient2(low = "red", high = "green", mid = "yellow", midpoint = 0) +
+  theme_minimal()
+
+
+#Sentiments table
+# Tokenize and join with Bing lexicon
+sentiment_reviews <- reviews %>%
+  unnest_tokens(word, TEXT) %>%  # Replace 'TEXT' with your text column name
+  inner_join(get_sentiments("bing"), by = "word") %>%
+  mutate(score = if_else(sentiment == "positive", 1, -1)) %>%
+  group_by(PRODUCT_CATEGORY) %>%
+  summarize(average_sentiment = mean(score, na.rm = TRUE))
+
+# Display the table
+print(sentiment_reviews)
+
+# Define the function to plot sentiments
+plot_sentiments <- function(categories) {
+  category_sentiments <- reviews %>%
+    filter(PRODUCT_CATEGORY %in% categories) %>%
+    unnest_tokens(word, TEXT) %>%
+    inner_join(get_sentiments("bing"), by = "word") %>%
+    count(PRODUCT_CATEGORY, sentiment, word) %>%
+    group_by(PRODUCT_CATEGORY, sentiment) %>%
+    top_n(5, n) %>%
+    ungroup()
+  
+  ggplot(category_sentiments, aes(x = reorder(word, n), y = n, fill = sentiment)) +
+    geom_col(show.legend = FALSE) +
+    facet_wrap(~PRODUCT_CATEGORY, scales = "free") +
+    coord_flip() +
+    theme_minimal() +
+    theme(axis.text.x = element_text(size = 14, face = "bold"),
+          axis.text.y = element_text(size = 14, face = "bold"),
+          strip.text = element_text(size = 16, face = "bold"),
+          plot.title = element_text(size = 17, face = "bold"),
+          axis.title = element_text(size = 16, face = "bold"),
+          legend.text = element_text(size = 14, face = "bold")) +
+    xlab("Words") +
+    ylab("Frequency") +
+    ggtitle("Top 10 Sentiment Words in Each Product Category")
+}
+
+# Apply the function to the first set of 6 categories
+first_six_categories <- unique(reviews$PRODUCT_CATEGORY)[1:6]
+plot_sentiments(first_six_categories)
+
+
+
+#sentiments
+# Tokenize and perform sentiment analysis
+sentiments <- reviews %>%
+  unnest_tokens(word, TEXT) %>%
+  inner_join(get_sentiments("bing"), by = "word")
+
+# Assigning sentiment scores: +1 for positive, -1 for negative
+sentiments <- sentiments %>%
+  mutate(score = if_else(sentiment == "positive", 1, -1))
+
+# Determine overall sentiment for each review
+review_sentiments <- sentiments %>%
+  group_by(doc_id = row_number()) %>%
+  summarize(total_score = sum(score)) %>%
+  ungroup() %>%
+  mutate(overall_sentiment = case_when(
+    total_score > 0 ~ "Positive",
+    total_score < 0 ~ "Negative",
+    TRUE ~ "Neutral"
+  ))
+
+#Sentiments Distribution Across Dataset
+
+# Count the number of reviews in each sentiment category
+sentiment_counts <- review_sentiments %>%
+  count(overall_sentiment)
+
+# Visualize the results
+ggplot(sentiment_counts, aes(x = overall_sentiment, y = n, fill = overall_sentiment)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Sentiment", y = "Number of Reviews", title = "Sentiment Distribution in Amazon Reviews") +
+  scale_fill_brewer(palette = "Set1") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 14, face = "bold"),
+        axis.text.y = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 18, face = "bold"),
+        axis.title = element_text(size = 16, face = "bold"),
+        legend.text = element_text(size = 14, face = "bold"))
+
+
+```
+
+#RQ4:How often do words that are indicative of product quality such as "Sturdy","Reliable","Durable","Superior","Solid" appear within the review texts across diverse product categories?
+```{r}
+# Define the quality-indicative words
+quality_words <- c("durable", "reliable", "sturdy", "superior", "solid")
+
+# Create a corpus and a document-term matrix
+corpus <- VCorpus(VectorSource(reviews$TEXT))
+dtm <- DocumentTermMatrix(corpus, control = list(dictionary = quality_words))
+
+# Convert the document-term matrix to a matrix and then to a data frame
+dtm_matrix <- as.matrix(dtm)
+colnames(dtm_matrix) <- quality_words
+dtm_df <- data.frame(dtm_matrix)
+dtm_df$PRODUCT_CATEGORY <- reviews$PRODUCT_CATEGORY
+
+# Aggregate word frequencies by product category
+word_freq_by_category <- dtm_df %>%
+  group_by(PRODUCT_CATEGORY) %>%
+  summarise(across(all_of(quality_words), sum, na.rm = TRUE))
+
+# Reshape data for plotting
+word_freq_long <- word_freq_by_category %>%
+  pivot_longer(cols = all_of(quality_words), names_to = "word", values_to = "frequency")
+
+# Split product categories into sets of 6
+unique_categories<- unique(reviews$PRODUCT_CATEGORY)
+category_sets <- split(unique_categories, ceiling(seq_along(unique_categories)/6))
+
+# Function to plot each set in a 2x3 layout with bold text and increased word size
+plot_set <- function(categories) {
+  subset_data <- word_freq_long %>%
+    filter(PRODUCT_CATEGORY %in% categories)
+  
+  ggplot(subset_data, aes(x = reorder(word, frequency), y = frequency, fill = word)) +
+    geom_bar(stat = "identity") +
+    facet_wrap(~ PRODUCT_CATEGORY, scales = "free_x", ncol = 3) +
+    coord_flip() +
+    labs(x = "Quality-Indicative Words", y = "Frequency", 
+         title = "Frequency of Quality Words in Product Categories",
+         subtitle = "Comparing word frequency across categories") +
+    scale_fill_brewer(palette = "Set3") +
+    theme_minimal() +
+    theme(text = element_text(face = "bold"),  # Make all text bold
+          legend.position = "none",
+          strip.background = element_blank(),
+          strip.text.x = element_text(size = 12),
+          axis.text.x = element_text(face = "bold", size = 12),  # Increase size of quality words
+          axis.text.y = element_text(face = "bold", size = 13),
+          plot.title = element_text(size = 14),
+          plot.subtitle = element_text(size = 13))
+}
+
+# Create and display plots for each set of 6 categories
+for (i in seq_along(category_sets)) {
+  print(plot_set(category_sets[[i]]))
+}
+print(plot_set(category_sets[[2]]))
+
+
+```
+#RQ5: How do specific product features and attributes discussed in Amazon reviews influence customer sentiment and subsequent star ratings?
+```{r fig.width=12, fig.height=6}
+
+# Preprocessing text data
+reviews <- read_csv("C:/Users/ndona/OneDrive/Desktop/FALL 2022 COURSES/ITEC 724-BIG DATA AND TEXT MINNING/Labs/ITEC 724 project/amazon_reviews.csv") # Replace with actual path
+
+reviews$TEXT <- as.character(reviews$TEXT)
+
+# Custom stop words
+additional_stop_words <- c("34", "2", "br", "lot", "set", "bag", "day", "tv", "watch", "makes", "camera", 
+                           "read", "found", "buy", "time", "light", "3", "5", "phone", "fit", "purchased", 
+                           "sound", "book", "bit", "days", "picture", "people", "design", "box", "water", 
+                           "item", "play", "one", "just", "can", "pong", "yearsits", "calcolatur", "tilts", 
+                           "stressanxietypanic", "differenceasinbhbgbry")
+
+# Preprocess the text data
+reviews_clean <- reviews %>%
+  unnest_tokens(word, TEXT) %>%
+  anti_join(stop_words) %>%
+  filter(!word %in% additional_stop_words)  # Remove custom stop words
+
+# Create a document-term matrix
+dtm <- reviews_clean %>%
+  count(PRODUCT_ID, word) %>%
+  cast_dtm(PRODUCT_ID, word, n)
+
+# Fit the LDA model
+lda_model <- LDA(dtm, k = 5, control = list(seed = 123))
+
+# Explore the topics
+topics <- tidy(lda_model)
+top_terms <- topics %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup()
+
+# Visualize top terms for each topic
+top_terms %>%
+  mutate(term = reorder(term, beta)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~topic, scales = "free_y") +
+  coord_flip() +
+  labs(x = "Terms", y = "Beta", title = "Top Terms in Each Topic") +
+  theme(axis.text.x = element_text(size = 16, face = "bold"),  # Increase size for x-axis labels
+        axis.text.y = element_text(size = 16, face = "bold"),  # Increase size for y-axis labels
+        axis.title.x = element_text(size = 16, face = "bold"),  # Increase size for x-axis title
+        axis.title.y = element_text(size = 16, face = "bold"),  # Increase size for y-axis title
+        plot.title = element_text(size = 18, face = "bold"))    # Increase size for plot title
+
+# Perform sentiment analysis
+sentiment_reviews <- reviews %>%
+  unnest_tokens(word, TEXT) %>%
+  anti_join(stop_words, by = "word") %>%
+  filter(!word %in% additional_stop_words) %>%
+  inner_join(get_sentiments("bing"), by = "word") %>%
+  mutate(score = if_else(sentiment == "positive", 1, if_else(sentiment == "negative", -1, 0L))) %>%
+  group_by(PRODUCT_ID) %>%
+  summarize(sentiment = sum(score, na.rm = TRUE))
+
+# Merge with the original data
+reviews_sentiment <- reviews %>%
+  left_join(sentiment_reviews, by = "PRODUCT_ID")
+
+```
+
+```{r}
+document_topics <- tidy(lda_model, matrix = "gamma") %>%
+  group_by(document) %>%
+  top_n(1, gamma) %>%
+  ungroup() %>%
+  rename(topic = topic, topic_gamma = gamma)
+
+# Merge this with the sentiment and reviews data
+reviews_combined <- reviews %>%
+  left_join(document_topics, by = c("PRODUCT_ID" = "document")) %>%
+  left_join(sentiment_reviews, by = "PRODUCT_ID")
+
+# Now you can visualize the relationship between topics, sentiment, and ratings
+ggplot(reviews_combined, aes(x = sentiment, y = RATING, color = as.factor(topic))) +
+  geom_point(alpha = 1, size = 3) +  # Increase point size and alpha for visibility
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~topic, scales = "free") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 20, face = "bold"),
+        axis.title.x = element_text(size = 18, face = "bold"),
+        axis.title.y = element_text(size = 18, face = "bold"),
+        strip.text = element_text(size = 16, face = "bold"),
+        legend.text = element_text(size = 14, face = "bold"),
+        axis.text.x = element_text(size = 14, face = "bold"),
+        axis.text.y = element_text(size = 14, face = "bold")) +
+  scale_color_brewer(palette = "Dark2") +  # Use a darker color palette
+  labs(title = "Relationship between Topics, Sentiment, and Ratings",
+       x = "Sentiment Score",
+       y = "Rating")
+
+```
+
+
